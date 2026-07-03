@@ -18,21 +18,14 @@ let state = {
 };
 
 const STORAGE_KEY = 'app-data';
+let seeded = false;
 
-async function loadData(){
+async function saveData(){
   try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    if(res && res.value){
-      const parsed = JSON.parse(res.value);
-      state.data = {
-        menu: mergeMenu(parsed.menu),
-        selections: parsed.selections || {}
-      };
-    }
+    await db.ref(STORAGE_KEY).set(state.data);
   }catch(e){
-    // no data yet — keep defaults
+    console.error('save failed', e);
   }
-  render();
 }
 
 // makes sure every meal key from MENU_DATA exists, even if saved data is older/partial
@@ -44,12 +37,20 @@ function mergeMenu(savedMenu){
   return merged;
 }
 
-async function saveData(){
-  try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify(state.data), true);
-  }catch(e){
-    console.error('save failed', e);
-  }
+// live sync: pushes Dad's picks to Mom's screen (and vice versa) instantly, no polling needed
+function startSync(){
+  db.ref(STORAGE_KEY).on('value', (snapshot)=>{
+    const val = snapshot.val();
+    if(val){
+      state.data = {menu: mergeMenu(val.menu), selections: val.selections || {}};
+    } else if(!seeded){
+      seeded = true;
+      saveData(); // nothing in the database yet — seed it with our defaults
+    }
+    if(!state.picker) render(); // don't yank the picker sheet out from under someone mid-selection
+  }, (err)=>{
+    console.error('sync error', err);
+  });
 }
 
 function todayIdx(){ return (new Date().getDay()+6)%7; }
@@ -397,21 +398,5 @@ function bindGlobal(){
   if(addBtn) addBtn.onclick = ()=>{ addMenuItem(); const i=document.getElementById('addInput'); if(i) i.focus(); };
 }
 
-loadData();
-
-// poll for updates so Mom's screen (and Dad's) stays in sync without refreshing
-setInterval(async ()=>{
-  if(state.picker) return; // don't disrupt an open picker
-  try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    if(res && res.value){
-      const parsed = JSON.parse(res.value);
-      const newStr = JSON.stringify(parsed);
-      const oldStr = JSON.stringify(state.data);
-      if(newStr !== oldStr){
-        state.data = {menu: mergeMenu(parsed.menu), selections: parsed.selections || {}};
-        render();
-      }
-    }
-  }catch(e){ /* ignore transient errors */ }
-}, 4000);
+render();       // show the landing screen immediately, don't wait on the network
+startSync();    // then start listening for live updates from Firebase
