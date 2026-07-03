@@ -32,7 +32,29 @@ async function saveData(){
 function mergeMenu(savedMenu){
   const merged = {};
   Object.keys(DEFAULT_MENU).forEach(mealKey=>{
-    merged[mealKey] = (savedMenu && savedMenu[mealKey]) ? savedMenu[mealKey] : JSON.parse(JSON.stringify(DEFAULT_MENU[mealKey]));
+    const def = DEFAULT_MENU[mealKey];
+    const saved = savedMenu && savedMenu[mealKey];
+    if(Array.isArray(def)){
+      // flat list (e.g. lunch) — start with every built-in dish, then add any extras that were saved
+      const combined = JSON.parse(JSON.stringify(def));
+      if(saved && Array.isArray(saved)){
+        saved.forEach(item => { if(!combined.includes(item)) combined.push(item); });
+      }
+      merged[mealKey] = combined;
+    } else {
+      // keyed by veg/nonveg or by section (e.g. breakfast, dinner)
+      const mergedObj = (saved && typeof saved === 'object') ? {...saved} : {};
+      Object.keys(def).forEach(subKey=>{
+        const defList = def[subKey];
+        const savedList = mergedObj[subKey];
+        const combined = JSON.parse(JSON.stringify(defList));
+        if(savedList && Array.isArray(savedList)){
+          savedList.forEach(item => { if(!combined.includes(item)) combined.push(item); });
+        }
+        mergedObj[subKey] = combined;
+      });
+      merged[mealKey] = mergedObj;
+    }
   });
   return merged;
 }
@@ -100,13 +122,19 @@ function addMenuItem(){
   saveData();
 }
 
+function isProtectedItem(mealKey, type, item){
+  if(!MENU_DATA[mealKey]) return false;
+  const meal = MEALS.find(m=>m.key===mealKey);
+  const list = meal.mode === 'flat' ? MENU_DATA[mealKey] : (MENU_DATA[mealKey][type] || []);
+  return list.includes(item);
+}
+
 function delMenuItem(mealKey, type, idx){
   const meal = MEALS.find(m=>m.key===mealKey);
-  if(meal.mode === 'flat'){
-    state.data.menu[mealKey].splice(idx,1);
-  }else{
-    state.data.menu[mealKey][type].splice(idx,1);
-  }
+  const list = meal.mode === 'flat' ? state.data.menu[mealKey] : state.data.menu[mealKey][type];
+  const item = list[idx];
+  if(isProtectedItem(mealKey, type, item)) return; // built-in dishes can't be removed
+  list.splice(idx,1);
   render();
   saveData();
 }
@@ -257,10 +285,11 @@ function renderPicker(){
         ${list.map((item,idx)=>{
           const typeVal = meal.mode === 'flat' ? null : state.pickType;
           const picked = isItemSelected(state.day, mealkey, item, typeVal);
+          const protectedItem = isProtectedItem(mealkey, typeVal, item);
           return `
           <div class="menuitem ${picked ? 'selected' : ''}" data-pick="${idx}">
             <span>${picked ? '✓ ' : ''}${item}</span>
-            <span class="del" data-del="${idx}">✕</span>
+            ${protectedItem ? '' : `<span class="del" data-del="${idx}">✕</span>`}
           </div>`;
         }).join('') || '<div style="color:var(--ink-soft);font-size:13px;padding:8px 2px;">No items yet — add one below.</div>'}
       </div>

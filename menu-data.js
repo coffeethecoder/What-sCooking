@@ -3,7 +3,11 @@ const MENU_DATA = {
   breakfast: {
     veg: [
         "Poha",
-        "Bhakri"
+        "Bhakri",
+        "Fruits",
+        "Protein Shake",
+        "Bottle Gourd halwa",
+        "Carrot halwa"
     ],
     nonveg: [
         "Boiled Eggs with bread",
@@ -15,6 +19,11 @@ const MENU_DATA = {
 
   lunch: [
         "Collegian",
+        "Tal vat",
+        "Dryfruit Grind mixture",
+        "Makhana",
+        "Mamra Chiwda",
+        "Leafy salad"
   ],
 
   dinner: {
@@ -29,22 +38,28 @@ const MENU_DATA = {
       "Pav", 
       "Rice"
     ],
+    
     "Salad": [
       "Tomoato Salad",
       "Cucumber Cheese Salad"
     ],
+
     "Sabzi": [
       "Rasa wala Aloo",
       "Sukha Aloo",
       "Bhindi Fry",
+      "Bhindi ki Shing",
       "Baingen chips",
       "Masala Baingen",
       "Bhadtu",
       "Sev Tamatar",
       "Mix veg",
       "Moong Sabzi",
-      "Dal"
+      "Dal",
+      "Palak Paneer",
+      "Masala Paneer"
     ],
+
     "South Indian": [
       "Mix Idli Sambar",
       "Normal Idli Sambar",
@@ -52,6 +67,7 @@ const MENU_DATA = {
       "Uttapam",
       "Sambhar Rice"
     ],
+
     "Special": [
         "Rajma Rice",
         "Sandwich",
@@ -62,8 +78,13 @@ const MENU_DATA = {
         "Kheer",
         "Patra",
         "Muthiya"
-
     ],
+
+    "Non-Veg":[
+        "Chicken",
+        "Fish"
+    ],
+
     "Chinese": [
         "Fried Rice",
         "Manchurian"
