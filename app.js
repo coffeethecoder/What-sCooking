@@ -311,10 +311,9 @@ function render(){
       <div class="masthead">
         <div class="eyebrow">Home Kitchen</div>
         <h1>What's Cooking?</h1>
-        <div class="sub">Dad picks. Mom sees it instantly.</div>
       </div>
       ${renderRoleSwitch()}
-      <div class="footnote">Choose who you are to get started. Both of you should open this same page — Dad picks a dish and it appears on Mom's screen right away, no calls needed.</div>
+      <div class="footnote">Choose who you are to get started.</div>
     `;
     bindGlobal();
     return;
