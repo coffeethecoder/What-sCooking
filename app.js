@@ -311,9 +311,10 @@ function render(){
       <div class="masthead">
         <div class="eyebrow">Home Kitchen</div>
         <h1>What's Cooking?</h1>
+        <div class="sub">Dad picks. Mom sees it instantly.</div>
       </div>
       ${renderRoleSwitch()}
-      <div class="footnote">Choose who you are to get started.</div>
+      <div class="footnote">Choose who you are to get started. Both of you should open this same page — Dad picks a dish and it appears on Mom's screen right away, no calls needed.</div>
     `;
     bindGlobal();
     return;
@@ -428,3 +429,8 @@ function bindGlobal(){
 
 render();       // show the landing screen immediately, don't wait on the network
 startSync();    // then start listening for live updates from Firebase
+
+// register the service worker so the app can be "installed" as a home-screen icon
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('sw.js').catch(()=>{ /* not critical if this fails */ });
+}

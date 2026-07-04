@@ -56,6 +56,7 @@ const MENU_DATA = {
       "Mix veg",
       "Moong Sabzi",
       "Dal",
+      "Dal Fry",
       "Palak Paneer",
       "Masala Paneer"
     ],
@@ -82,7 +83,7 @@ const MENU_DATA = {
 
     "Non-Veg":[
         "Chicken",
-        "Fish"
+        "Fish",
     ],
 
     "Chinese": [
