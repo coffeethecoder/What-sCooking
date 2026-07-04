@@ -1,4 +1,4 @@
-const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+const DAY_ABBR = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; // matches Date.getDay()
 const MEALS = [
   {key:'breakfast', label:'Breakfast', time:'Morning', mode:'vegnonveg'},
   {key:'lunch', label:'Lunch / Tiffin', time:'Midday', mode:'flat'},
@@ -6,10 +6,32 @@ const MEALS = [
 ];
 const DEFAULT_MENU = JSON.parse(JSON.stringify(MENU_DATA)); // deep copy, keyed by meal -> veg/nonveg
 
+function pad2(n){ return n < 10 ? '0'+n : ''+n; }
+function dateKey(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function parseDateKey(key){ const [y,m,d] = key.split('-').map(Number); return new Date(y, m-1, d); }
+function addDays(d, n){ const r = new Date(d); r.setDate(d.getDate()+n); return r; }
+function startOfWeek(d){ // Monday-based week
+  const day = d.getDay();
+  const diff = (day === 0) ? -6 : (1 - day);
+  const r = new Date(d);
+  r.setDate(d.getDate()+diff);
+  r.setHours(0,0,0,0);
+  return r;
+}
+// Dad's fasting days: the 9th, 18th, 27th of every month, and every Thursday
+function isFastingDay(d){
+  const dom = d.getDate();
+  return dom===9 || dom===18 || dom===27 || d.getDay()===4;
+}
+function formatDateLabel(d){
+  return `${DAY_ABBR[d.getDay()]}, ${d.getDate()} ${d.toLocaleDateString('en-US',{month:'short'})}`;
+}
+
 let state = {
   role: null,          // 'dad' | 'mom'
-  day: DAYS[(new Date().getDay()+6)%7], // today, Mon-index
-  data: {menu: DEFAULT_MENU, selections: {}}, // selections[day][mealkey] = {item,type,time}
+  weekStart: startOfWeek(new Date()), // Monday of the currently displayed week
+  day: dateKey(new Date()), // selected date, as "YYYY-MM-DD"
+  data: {menu: DEFAULT_MENU, selections: {}}, // selections[dateKey][mealkey] = {items:[{item,type}], time} or {skipped:true, items:[], time}
   picker: null,        // mealkey when picker sheet is open
   pickType: null,       // 'veg'/'nonveg', a section name, or null for flat meals
   addText: '',
@@ -75,7 +97,32 @@ function startSync(){
   });
 }
 
-function todayIdx(){ return (new Date().getDay()+6)%7; }
+function getWeekDates(){
+  const dates = [];
+  for(let i=0;i<7;i++) dates.push(addDays(state.weekStart, i));
+  return dates;
+}
+
+function shiftWeek(deltaDays){
+  const selectedDate = parseDateKey(state.day);
+  const offsetDays = Math.round((selectedDate - state.weekStart) / (1000*60*60*24));
+  state.weekStart = addDays(state.weekStart, deltaDays);
+  state.day = dateKey(addDays(state.weekStart, offsetDays));
+  render();
+}
+
+function jumpToToday(){
+  state.weekStart = startOfWeek(new Date());
+  state.day = dateKey(new Date());
+  render();
+}
+
+function clearWeek(){
+  if(!window.confirm('Clear all picks for this week? This can\'t be undone.')) return;
+  getWeekDates().forEach(d => { delete state.data.selections[dateKey(d)]; });
+  render();
+  saveData();
+}
 
 function selEntry(day, mealkey){
   return state.data.selections[day] && state.data.selections[day][mealkey];
@@ -83,20 +130,34 @@ function selEntry(day, mealkey){
 
 function isItemSelected(day, mealkey, item, type){
   const entry = selEntry(day, mealkey);
-  return !!(entry && entry.items.some(it => it.item===item && it.type===type));
+  return !!(entry && entry.items && entry.items.some(it => it.item===item && it.type===type));
 }
 
 // tapping an item adds it if not picked, removes it if already picked — supports multiple picks per meal
 function toggleItem(day, mealkey, item, type){
   if(!state.data.selections[day]) state.data.selections[day] = {};
   let entry = state.data.selections[day][mealkey];
-  if(!entry) entry = {items: [], time: ''};
+  if(!entry || entry.skipped) entry = {items: [], time: ''}; // picking food cancels a "not eating" mark
   const idx = entry.items.findIndex(it => it.item===item && it.type===type);
   if(idx >= 0) entry.items.splice(idx, 1);
   else entry.items.push({item, type});
   entry.time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  entry.skipped = false;
   if(entry.items.length === 0) delete state.data.selections[day][mealkey];
   else state.data.selections[day][mealkey] = entry;
+  render();
+  saveData();
+}
+
+// marks a meal as "not eating today" (or undoes that mark) — for fasting days
+function toggleSkip(day, mealkey){
+  if(!state.data.selections[day]) state.data.selections[day] = {};
+  const existing = state.data.selections[day][mealkey];
+  if(existing && existing.skipped){
+    delete state.data.selections[day][mealkey];
+  } else {
+    state.data.selections[day][mealkey] = {skipped: true, items: [], time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})};
+  }
   render();
   saveData();
 }
@@ -173,9 +234,29 @@ function renderRoleSwitch(){
 }
 
 function renderDayTabs(){
-  return `<div class="daytabs">${DAYS.map((d,i)=>`
-    <button data-day="${d}" class="${state.day===d?'active':''} ${i===todayIdx()?'istoday':''}">${d}</button>
-  `).join('')}</div>`;
+  const dates = getWeekDates();
+  const todayKey = dateKey(new Date());
+  const rangeStart = dates[0], rangeEnd = dates[6];
+  const sameMonth = rangeStart.getMonth() === rangeEnd.getMonth();
+  const weekLabel = sameMonth
+    ? `${rangeStart.toLocaleDateString('en-US',{month:'short'})} ${rangeStart.getDate()}–${rangeEnd.getDate()}`
+    : `${rangeStart.toLocaleDateString('en-US',{month:'short',day:'numeric'})} – ${rangeEnd.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+
+  return `
+  <div class="weeknav">
+    <button id="prevWeek" class="weeknavbtn">‹</button>
+    <div class="weeklabel" id="jumpToday" title="Jump to this week">${weekLabel}</div>
+    <button id="nextWeek" class="weeknavbtn">›</button>
+  </div>
+  <div class="daytabs">
+    ${dates.map(d=>{
+      const key = dateKey(d);
+      const fasting = isFastingDay(d);
+      return `<button data-day="${key}" class="${state.day===key?'active':''} ${key===todayKey?'istoday':''} ${fasting?'fastday':''}">
+        <span class="dname">${DAY_ABBR[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>
+      </button>`;
+    }).join('')}
+  </div>`;
 }
 
 // veg/nonveg get their own color; anything else (a section name, or nothing) is neutral
@@ -188,14 +269,17 @@ function slipTagFor(it){
 
 function renderMealCardDad(meal){
   const entry = selEntry(state.day, meal.key);
-  const hasItems = entry && entry.items.length > 0;
+  const skipped = entry && entry.skipped;
+  const hasItems = entry && !skipped && entry.items && entry.items.length > 0;
   return `
   <div class="meal-card">
     <div class="meal-head">
       <div class="meal-name">${meal.label}</div>
       <div class="meal-time">${meal.time}</div>
     </div>
-    ${hasItems ? `
+    ${skipped ? `
+      <div class="skipcard" data-open="${meal.key}">🚫 Not eating ${meal.label.toLowerCase()} today<span class="skipsub">tap to change</span></div>
+    ` : hasItems ? `
       <div class="selected-items clickable" data-open="${meal.key}">
         ${entry.items.map(it => `
           <div class="slip ${slipClassFor(it)}">
@@ -213,14 +297,17 @@ function renderMealCardDad(meal){
 
 function renderMealCardMom(meal){
   const entry = selEntry(state.day, meal.key);
-  const hasItems = entry && entry.items.length > 0;
+  const skipped = entry && entry.skipped;
+  const hasItems = entry && !skipped && entry.items && entry.items.length > 0;
   return `
   <div class="meal-card">
     <div class="meal-head">
       <div class="meal-name">${meal.label}</div>
       <div class="meal-time">${meal.time}</div>
     </div>
-    ${hasItems ? `
+    ${skipped ? `
+      <div class="skipcard">🚫 Not eating ${meal.label.toLowerCase()} today</div>
+    ` : hasItems ? `
       <div class="selected-items">
         ${entry.items.map(it => `
           <div class="slip ${slipClassFor(it)}">
@@ -240,6 +327,8 @@ function renderPicker(){
   if(!state.picker) return '';
   const mealkey = state.picker;
   const meal = MEALS.find(m=>m.key===mealkey);
+  const entry = selEntry(state.day, mealkey);
+  const isSkipped = !!(entry && entry.skipped);
 
   let selectorHtml = '';
   let list = [];
@@ -273,13 +362,7 @@ function renderPicker(){
     list = state.data.menu[mealkey] || [];
   }
 
-  return `
-  <div class="overlay" id="overlay">
-    <div class="sheet">
-      <div class="sheet-head">
-        <h2>${meal.label} — ${state.day}</h2>
-        <button id="closeSheet">✕</button>
-      </div>
+  const pickingBody = `
       ${selectorHtml}
       <div class="menulist">
         ${list.map((item,idx)=>{
@@ -297,7 +380,18 @@ function renderPicker(){
         <input id="addInput" placeholder="Add a new dish…" value="${state.addText}">
         <button id="addBtn">Add</button>
       </div>
-      ${(selEntry(state.day, mealkey) && selEntry(state.day, mealkey).items.length) ? `<div style="margin-top:12px;text-align:center;"><button id="clearSel" style="background:none;border:none;color:var(--terracotta);font-size:13px;cursor:pointer;text-decoration:underline;">Clear all selections for this meal</button></div>` : ''}
+      ${(entry && entry.items && entry.items.length) ? `<div style="margin-top:12px;text-align:center;"><button id="clearSel" style="background:none;border:none;color:var(--terracotta);font-size:13px;cursor:pointer;text-decoration:underline;">Clear all selections for this meal</button></div>` : ''}
+  `;
+
+  return `
+  <div class="overlay" id="overlay">
+    <div class="sheet">
+      <div class="sheet-head">
+        <h2>${meal.label} — ${formatDateLabel(parseDateKey(state.day))}</h2>
+        <button id="closeSheet">✕</button>
+      </div>
+      <button id="skipToggle" class="skiptoggle ${isSkipped ? 'active' : ''}">${isSkipped ? '↩️ Undo — pick food for this meal instead' : '🚫 Not eating this meal today'}</button>
+      ${isSkipped ? `<div class="skipnote">Marked as skipped. Tap "Undo" above to choose food instead.</div>` : pickingBody}
       <button id="doneBtn" class="donebtn">Done</button>
     </div>
   </div>`;
@@ -321,6 +415,7 @@ function render(){
   }
 
   const cards = MEALS.map(m => state.role==='dad' ? renderMealCardDad(m) : renderMealCardMom(m)).join('');
+  const fasting = isFastingDay(parseDateKey(state.day));
 
   app.innerHTML = `
     <div class="masthead">
@@ -329,8 +424,10 @@ function render(){
       <div class="sub">${state.role==='dad' ? 'Pick a dish for each meal' : "Today's menu, picked by Dad"}</div>
     </div>
     ${renderDayTabs()}
+    ${fasting ? `<div class="fastbanner">🌙 Fasting day — usually just one full meal</div>` : ''}
     ${cards}
     ${state.role==='mom' ? `<div class="footnote">This screen updates on its own every few seconds.</div>` : `<div class="footnote">Tap a meal to choose from the menu, or add a new dish while you're there.</div>`}
+    ${state.role==='dad' ? `<div class="clearweek"><button id="clearWeekBtn">Clear all picks for this week</button></div>` : ''}
     <div class="switchuser"><button id="switchRole">Not ${state.role==='dad'?'Dad':'Mom'}? Switch user</button></div>
     ${renderPicker()}
   `;
@@ -350,6 +447,16 @@ function bindGlobal(){
   app.querySelectorAll('[data-day]').forEach(b=>{
     b.onclick = ()=>{ state.day = b.dataset.day; render(); };
   });
+
+  const prevWeekBtn = document.getElementById('prevWeek');
+  if(prevWeekBtn) prevWeekBtn.onclick = ()=>{ shiftWeek(-7); };
+  const nextWeekBtn = document.getElementById('nextWeek');
+  if(nextWeekBtn) nextWeekBtn.onclick = ()=>{ shiftWeek(7); };
+  const jumpTodayEl = document.getElementById('jumpToday');
+  if(jumpTodayEl) jumpTodayEl.onclick = jumpToToday;
+
+  const clearWeekBtn = document.getElementById('clearWeekBtn');
+  if(clearWeekBtn) clearWeekBtn.onclick = clearWeek;
 
   app.querySelectorAll('[data-open]').forEach(b=>{
     b.onclick = ()=>{
@@ -377,6 +484,9 @@ function bindGlobal(){
   if(doneBtn) doneBtn.onclick = ()=>{ state.picker=null; render(); };
   const overlay = document.getElementById('overlay');
   if(overlay) overlay.onclick = (e)=>{ if(e.target===overlay){ state.picker=null; render(); } };
+
+  const skipToggle = document.getElementById('skipToggle');
+  if(skipToggle) skipToggle.onclick = ()=>{ toggleSkip(state.day, state.picker); };
 
   app.querySelectorAll('[data-cat]').forEach(b=>{
     b.onclick = ()=>{ state.pickType = b.dataset.cat; state.addSectionOpen = false; render(); };

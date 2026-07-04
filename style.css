@@ -43,19 +43,42 @@ body{
 }
 .roleswitch button.active{background:var(--ink);color:var(--paper);}
 
-/* day tabs */
-.daytabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:16px;}
+/* week navigation */
+.weeknav{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+.weeknavbtn{
+  border:1px solid var(--line);background:var(--paper);width:32px;height:32px;
+  border-radius:8px;font-size:16px;cursor:pointer;color:var(--ink);line-height:1;
+}
+.weeklabel{font-size:13px;font-weight:700;color:var(--ink-soft);cursor:pointer;user-select:none;}
+
+/* day tabs (real calendar dates) */
+.daytabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;}
 .daytabs::-webkit-scrollbar{display:none;}
 .daytabs button{
   flex:0 0 auto;border:1px solid var(--line);background:var(--paper);
-  color:var(--ink-soft);padding:8px 14px;border-radius:10px;font-size:13px;
+  color:var(--ink-soft);padding:8px 10px;border-radius:10px;font-size:13px;
   font-weight:600;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:2px;min-width:42px;position:relative;
 }
+.daytabs button .dname{font-size:10px;text-transform:uppercase;letter-spacing:.04em;}
+.daytabs button .dnum{font-size:15px;font-weight:700;}
 .daytabs button.active{background:var(--gold);border-color:var(--gold);color:var(--ink);}
-.daytabs button.istoday{position:relative;}
-.daytabs button.istoday::after{
-  content:'';position:absolute;bottom:3px;left:50%;transform:translateX(-50%);
-  width:4px;height:4px;border-radius:50%;background:var(--terracotta);
+.daytabs button.istoday:not(.active){border-color:var(--terracotta);}
+.daytabs button.fastday::after{
+  content:'🌙';position:absolute;top:1px;right:2px;font-size:8px;line-height:1;
+}
+
+/* fasting day banner */
+.fastbanner{
+  background:#FBF1DD;border:1px solid var(--gold);color:var(--ink);
+  font-size:12.5px;text-align:center;padding:8px 12px;border-radius:10px;margin:0 0 14px;
+}
+
+/* clear-week link */
+.clearweek{text-align:center;margin-top:10px;}
+.clearweek button{
+  border:none;background:none;color:var(--maroon);font-size:12px;
+  cursor:pointer;text-decoration:underline;font-family:inherit;
 }
 
 /* meal card */
@@ -178,6 +201,20 @@ body{
 /* mom empty state */
 .waiting{display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:13px;padding:14px;justify-content:center;}
 .waiting .bell{font-size:16px;}
+
+/* "not eating this meal today" states */
+.skipcard{
+  border:1.5px dashed var(--maroon);border-radius:10px;padding:14px;
+  text-align:center;color:var(--maroon);font-size:13px;cursor:pointer;background:#FBF0EE;
+}
+.skipsub{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:4px;text-transform:uppercase;letter-spacing:.05em;}
+
+.skiptoggle{
+  width:100%;padding:11px;border-radius:10px;border:1.5px solid var(--maroon);background:#fff;
+  color:var(--maroon);font-weight:700;font-size:13.5px;cursor:pointer;font-family:inherit;margin-bottom:14px;
+}
+.skiptoggle.active{background:var(--maroon);color:#fff;}
+.skipnote{color:var(--ink-soft);font-size:13px;text-align:center;padding:6px 4px 4px;}
 
 .footnote{text-align:center;color:var(--ink-soft);font-size:11.5px;margin-top:22px;line-height:1.6;}
 
