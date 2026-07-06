@@ -41,7 +41,9 @@ const MENU_DATA = {
     
     "Salad": [
       "Tomoato Salad",
-      "Cucumber Cheese Salad"
+      "Cucumber Cheese Salad",
+      "Boiled lettuce",
+      "Tomato Soup"
     ],
 
     "Sabzi": [
@@ -78,12 +80,16 @@ const MENU_DATA = {
         "Pav Bhaji",
         "Kheer",
         "Patra",
-        "Muthiya"
+        "Muthiya",
+        "Kanda Poha",
+        "Omlette"
     ],
 
     "Non-Veg":[
-        "Chicken",
-        "Fish",
+        "Boiled Chicken with fried rice",
+        "Boiled Fish with fried rice",
+        "Fish with Palak curry",
+        "Chicken with Palak curry"
     ],
 
     "Chinese": [
