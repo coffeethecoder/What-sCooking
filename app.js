@@ -27,11 +27,41 @@ function formatDateLabel(d){
   return `${DAY_ABBR[d.getDay()]}, ${d.getDate()} ${d.toLocaleDateString('en-US',{month:'short'})}`;
 }
 
+const ROLE_LABELS = {dad: 'Dad', mom: 'Mom', khyati: 'Khyati'};
+const OWNER_LABELS = {dad: '👨 Dad', khyati: '👧 Khyati'};
+function isEditorRole(){ return state.role === 'dad' || state.role === 'khyati'; }
+function showsFasting(){ return state.role === 'dad' || state.role === 'mom'; } // Khyati's view skips the fasting stuff
+function otherEditor(){ return state.role === 'dad' ? 'khyati' : 'dad'; }
+
+// each meal can now hold Dad's own pick AND Khyati's own pick, side by side, tagged by who chose it
+function personPicks(entry, person){
+  return (entry && entry.items) ? entry.items.filter(it => it.by === person) : [];
+}
+function personSkipped(entry, person){
+  return !!(entry && entry.skips && entry.skips.includes(person));
+}
+
+// old data (from before Khyati existed) had no "by" field and a single shared "skipped" flag —
+// treat that legacy data as Dad's, since he was the only one picking back then
+function migrateSelections(saved){
+  const out = {};
+  Object.keys(saved || {}).forEach(day=>{
+    out[day] = {};
+    Object.keys(saved[day] || {}).forEach(mealkey=>{
+      const e = saved[day][mealkey] || {};
+      const items = (e.items || []).map(it => it.by ? it : {...it, by:'dad'});
+      const skips = e.skips ? e.skips : (e.skipped ? ['dad'] : []);
+      out[day][mealkey] = {items, skips, time: e.time || ''};
+    });
+  });
+  return out;
+}
+
 let state = {
   role: null,          // 'dad' | 'mom'
   weekStart: startOfWeek(new Date()), // Monday of the currently displayed week
   day: dateKey(new Date()), // selected date, as "YYYY-MM-DD"
-  data: {menu: DEFAULT_MENU, selections: {}}, // selections[dateKey][mealkey] = {items:[{item,type}], time} or {skipped:true, items:[], time}
+  data: {menu: DEFAULT_MENU, selections: {}, khyatiHome: false}, // khyatiHome: whether her profile/features are unlocked right now
   picker: null,        // mealkey when picker sheet is open
   pickType: null,       // 'veg'/'nonveg', a section name, or null for flat meals
   addText: '',
@@ -86,7 +116,14 @@ function startSync(){
   db.ref(STORAGE_KEY).on('value', (snapshot)=>{
     const val = snapshot.val();
     if(val){
-      state.data = {menu: mergeMenu(val.menu), selections: val.selections || {}};
+      state.data = {
+        menu: mergeMenu(val.menu),
+        selections: migrateSelections(val.selections),
+        khyatiHome: typeof val.khyatiHome === 'boolean' ? val.khyatiHome : false
+      };
+      if(!state.data.khyatiHome && state.role === 'khyati'){
+        state.role = null; // her profile just got locked — send this device back to the role screen
+      }
     } else if(!seeded){
       seeded = true;
       saveData(); // nothing in the database yet — seed it with our defaults
@@ -124,46 +161,77 @@ function clearWeek(){
   saveData();
 }
 
+function showToast(msg){
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  requestAnimationFrame(()=> toast.classList.add('show'));
+  setTimeout(()=>{
+    toast.classList.remove('show');
+    setTimeout(()=> toast.remove(), 300);
+  }, 1800);
+}
+
 function selEntry(day, mealkey){
   return state.data.selections[day] && state.data.selections[day][mealkey];
 }
 
 function isItemSelected(day, mealkey, item, type){
   const entry = selEntry(day, mealkey);
-  return !!(entry && entry.items && entry.items.some(it => it.item===item && it.type===type));
+  const person = state.role; // only Dad or Khyati can open the picker, so this is always one of them
+  return personPicks(entry, person).some(it => it.item===item && it.type===type);
 }
 
-// tapping an item adds it if not picked, removes it if already picked — supports multiple picks per meal
+// tapping an item adds it if not picked, removes it if already picked — supports multiple picks per meal,
+// tagged to whichever of Dad/Khyati is currently using the app
 function toggleItem(day, mealkey, item, type){
+  const person = state.role;
   if(!state.data.selections[day]) state.data.selections[day] = {};
   let entry = state.data.selections[day][mealkey];
-  if(!entry || entry.skipped) entry = {items: [], time: ''}; // picking food cancels a "not eating" mark
-  const idx = entry.items.findIndex(it => it.item===item && it.type===type);
+  if(!entry) entry = {items: [], skips: [], time: ''};
+  if(!entry.items) entry.items = [];
+  if(!entry.skips) entry.skips = [];
+  entry.skips = entry.skips.filter(p => p !== person); // picking food cancels this person's "not eating" mark
+  const idx = entry.items.findIndex(it => it.item===item && it.type===type && it.by===person);
   if(idx >= 0) entry.items.splice(idx, 1);
-  else entry.items.push({item, type});
+  else entry.items.push({item, type, by: person});
   entry.time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-  entry.skipped = false;
-  if(entry.items.length === 0) delete state.data.selections[day][mealkey];
+  if(entry.items.length === 0 && entry.skips.length === 0) delete state.data.selections[day][mealkey];
   else state.data.selections[day][mealkey] = entry;
   render();
   saveData();
 }
 
-// marks a meal as "not eating today" (or undoes that mark) — for fasting days
+// marks a meal as "not eating today" for whichever of Dad/Khyati is using the app (or undoes that mark)
 function toggleSkip(day, mealkey){
+  const person = state.role;
   if(!state.data.selections[day]) state.data.selections[day] = {};
-  const existing = state.data.selections[day][mealkey];
-  if(existing && existing.skipped){
-    delete state.data.selections[day][mealkey];
+  let entry = state.data.selections[day][mealkey];
+  if(!entry) entry = {items: [], skips: [], time: ''};
+  if(!entry.items) entry.items = [];
+  if(!entry.skips) entry.skips = [];
+  if(entry.skips.includes(person)){
+    entry.skips = entry.skips.filter(p => p !== person);
   } else {
-    state.data.selections[day][mealkey] = {skipped: true, items: [], time: new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})};
+    entry.skips.push(person);
+    entry.items = entry.items.filter(it => it.by !== person); // clear this person's own picks when skipping
   }
+  entry.time = new Date().toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  if(entry.items.length === 0 && entry.skips.length === 0) delete state.data.selections[day][mealkey];
+  else state.data.selections[day][mealkey] = entry;
   render();
   saveData();
 }
 
+// clears only the current person's own picks/skip for this meal — leaves the other person's choice untouched
 function clearItem(day, mealkey){
-  if(state.data.selections[day]) delete state.data.selections[day][mealkey];
+  const person = state.role;
+  const entry = state.data.selections[day] && state.data.selections[day][mealkey];
+  if(!entry) return;
+  entry.items = (entry.items || []).filter(it => it.by !== person);
+  entry.skips = (entry.skips || []).filter(p => p !== person);
+  if(entry.items.length === 0 && entry.skips.length === 0) delete state.data.selections[day][mealkey];
   render();
   saveData();
 }
@@ -226,10 +294,24 @@ function delSection(mealKey, name){
 }
 
 function renderRoleSwitch(){
+  const showKhyati = state.data.khyatiHome;
   return `
   <div class="roleswitch">
-    <button data-role="dad" class="${state.role==='dad'?'active':''}">👨 I'm Dad</button>
-    <button data-role="mom" class="${state.role==='mom'?'active':''}">👩 I'm Mom</button>
+    <button data-role="dad" class="${state.role==='dad'?'active':''}">👨 Dad</button>
+    ${showKhyati ? `<button data-role="khyati" class="${state.role==='khyati'?'active':''}">👧 Khyati</button>` : ''}
+    <button data-role="mom" class="${state.role==='mom'?'active':''}">👩 Mom</button>
+  </div>`;
+}
+
+function renderHomeToggle(){
+  const on = state.data.khyatiHome;
+  return `
+  <div class="hometoggle-wrap">
+    <label class="hometoggle">
+      <input type="checkbox" id="khyatiHomeToggle" ${on ? 'checked' : ''}>
+      <span class="toggletrack"><span class="togglethumb"></span></span>
+    </label>
+    <span class="hometogglelabel">🏠 Khyati is home${on ? ' — her profile is unlocked' : ''}</span>
   </div>`;
 }
 
@@ -251,7 +333,7 @@ function renderDayTabs(){
   <div class="daytabs">
     ${dates.map(d=>{
       const key = dateKey(d);
-      const fasting = isFastingDay(d);
+      const fasting = isFastingDay(d) && showsFasting();
       return `<button data-day="${key}" class="${state.day===key?'active':''} ${key===todayKey?'istoday':''} ${fasting?'fastday':''}">
         <span class="dname">${DAY_ABBR[d.getDay()]}</span><span class="dnum">${d.getDate()}</span>
       </button>`;
@@ -267,59 +349,87 @@ function slipTagFor(it){
   return (it.type && it.type !== 'veg' && it.type !== 'nonveg') ? it.type : null;
 }
 
+// read-only summary of one person's status for a meal — used to show "the other person's" choice,
+// and used twice (once per person) on Mom's screen
+function renderPersonStatus(person, entry){
+  const label = OWNER_LABELS[person];
+  if(personSkipped(entry, person)){
+    return `<div class="personblock skip">🚫 ${label} isn't eating this</div>`;
+  }
+  const items = personPicks(entry, person);
+  if(items.length){
+    return `<div class="personblock">
+      <div class="personlabel">${label}</div>
+      ${items.map(it => `
+        <div class="slip ${slipClassFor(it)}">
+          <div class="dot"></div>
+          <div class="item">${slipTagFor(it) ? `<span class="cattag">${slipTagFor(it)}</span>` : ''}${it.item}</div>
+        </div>
+      `).join('')}
+    </div>`;
+  }
+  return `<div class="personblock empty">${label} hasn't picked yet</div>`;
+}
+
 function renderMealCardDad(meal){
   const entry = selEntry(state.day, meal.key);
-  const skipped = entry && entry.skipped;
-  const hasItems = entry && !skipped && entry.items && entry.items.length > 0;
+  const other = otherEditor();
+  const showOther = state.data.khyatiHome; // only show the other person's status when her profile is unlocked
+  const skipped = personSkipped(entry, state.role);
+  const items = personPicks(entry, state.role);
+
+  const ownSection = skipped ? `
+      <div class="skipcard" data-open="${meal.key}">🚫 Not eating ${meal.label.toLowerCase()} today<span class="skipsub">tap to change</span></div>
+    ` : items.length ? `
+      <div class="selected-items clickable" data-open="${meal.key}">
+        ${items.map(it => `
+          <div class="slip ${slipClassFor(it)}">
+            <div class="dot"></div>
+            <div class="item">${slipTagFor(it) ? `<span class="cattag">${slipTagFor(it)}</span>` : ''}${it.item}</div>
+          </div>
+        `).join('')}
+        <div class="stamp-row">tap to edit</div>
+      </div>
+    ` : `
+      <div class="slot-empty" data-open="${meal.key}">+ Choose your own ${meal.label.toLowerCase()}</div>
+    `;
+
   return `
   <div class="meal-card">
     <div class="meal-head">
       <div class="meal-name">${meal.label}</div>
       <div class="meal-time">${meal.time}</div>
     </div>
-    ${skipped ? `
-      <div class="skipcard" data-open="${meal.key}">🚫 Not eating ${meal.label.toLowerCase()} today<span class="skipsub">tap to change</span></div>
-    ` : hasItems ? `
-      <div class="selected-items clickable" data-open="${meal.key}">
-        ${entry.items.map(it => `
-          <div class="slip ${slipClassFor(it)}">
-            <div class="dot"></div>
-            <div class="item">${slipTagFor(it) ? `<span class="cattag">${slipTagFor(it)}</span>` : ''}${it.item}</div>
-          </div>
-        `).join('')}
-        <div class="stamp-row">tap to edit · sent ${entry.time}</div>
-      </div>
-    ` : `
-      <div class="slot-empty" data-open="${meal.key}">+ Choose what's for ${meal.label.toLowerCase()}</div>
-    `}
+    ${showOther ? renderPersonStatus(other, entry) : ''}
+    ${showOther ? `<div class="owndivider"></div>` : ''}
+    ${ownSection}
   </div>`;
 }
 
 function renderMealCardMom(meal){
   const entry = selEntry(state.day, meal.key);
-  const skipped = entry && entry.skipped;
-  const hasItems = entry && !skipped && entry.items && entry.items.length > 0;
+  const khyatiActive = state.data.khyatiHome;
+  const dadEmpty = !personSkipped(entry,'dad') && personPicks(entry,'dad').length===0;
+  const khyatiEmpty = !personSkipped(entry,'khyati') && personPicks(entry,'khyati').length===0;
+
+  let body;
+  if(!khyatiActive){
+    body = dadEmpty
+      ? `<div class="waiting"><span class="bell">🔔</span> Waiting for Dad to choose…</div>`
+      : renderPersonStatus('dad', entry);
+  } else {
+    body = (dadEmpty && khyatiEmpty)
+      ? `<div class="waiting"><span class="bell">🔔</span> Waiting for Dad or Khyati to choose…</div>`
+      : `${renderPersonStatus('dad', entry)}${renderPersonStatus('khyati', entry)}`;
+  }
+
   return `
   <div class="meal-card">
     <div class="meal-head">
       <div class="meal-name">${meal.label}</div>
       <div class="meal-time">${meal.time}</div>
     </div>
-    ${skipped ? `
-      <div class="skipcard">🚫 Not eating ${meal.label.toLowerCase()} today</div>
-    ` : hasItems ? `
-      <div class="selected-items">
-        ${entry.items.map(it => `
-          <div class="slip ${slipClassFor(it)}">
-            <div class="dot"></div>
-            <div class="item">${slipTagFor(it) ? `<span class="cattag">${slipTagFor(it)}</span>` : ''}${it.item}</div>
-          </div>
-        `).join('')}
-        <div class="stamp-row">picked at ${entry.time}</div>
-      </div>
-    ` : `
-      <div class="waiting"><span class="bell">🔔</span> Waiting for Dad to choose…</div>
-    `}
+    ${body}
   </div>`;
 }
 
@@ -328,7 +438,8 @@ function renderPicker(){
   const mealkey = state.picker;
   const meal = MEALS.find(m=>m.key===mealkey);
   const entry = selEntry(state.day, mealkey);
-  const isSkipped = !!(entry && entry.skipped);
+  const isSkipped = personSkipped(entry, state.role);
+  const ownItemCount = personPicks(entry, state.role).length;
 
   let selectorHtml = '';
   let list = [];
@@ -380,7 +491,7 @@ function renderPicker(){
         <input id="addInput" placeholder="Add a new dish…" value="${state.addText}">
         <button id="addBtn">Add</button>
       </div>
-      ${(entry && entry.items && entry.items.length) ? `<div style="margin-top:12px;text-align:center;"><button id="clearSel" style="background:none;border:none;color:var(--terracotta);font-size:13px;cursor:pointer;text-decoration:underline;">Clear all selections for this meal</button></div>` : ''}
+      ${ownItemCount ? `<div style="margin-top:12px;text-align:center;"><button id="clearSel" style="background:none;border:none;color:var(--terracotta);font-size:13px;cursor:pointer;text-decoration:underline;">Clear all selections for this meal</button></div>` : ''}
   `;
 
   return `
@@ -390,6 +501,7 @@ function renderPicker(){
         <h2>${meal.label} — ${formatDateLabel(parseDateKey(state.day))}</h2>
         <button id="closeSheet">✕</button>
       </div>
+      <div class="pickerowner">Choosing for ${OWNER_LABELS[state.role]}</div>
       <button id="skipToggle" class="skiptoggle ${isSkipped ? 'active' : ''}">${isSkipped ? '↩️ Undo — pick food for this meal instead' : '🚫 Not eating this meal today'}</button>
       ${isSkipped ? `<div class="skipnote">Marked as skipped. Tap "Undo" above to choose food instead.</div>` : pickingBody}
       <button id="doneBtn" class="donebtn">Done</button>
@@ -405,30 +517,33 @@ function render(){
       <div class="masthead">
         <div class="eyebrow">Home Kitchen</div>
         <h1>What's Cooking?</h1>
-        <div class="sub">Dad picks. Mom sees it instantly.</div>
+        <div class="sub">${state.data.khyatiHome ? 'Dad and Khyati pick. Mom sees it instantly.' : 'Dad picks. Mom sees it instantly.'}</div>
       </div>
+      ${renderHomeToggle()}
       ${renderRoleSwitch()}
-      <div class="footnote">Choose who you are to get started. Both of you should open this same page — Dad picks a dish and it appears on Mom's screen right away, no calls needed.</div>
+      <div class="footnote">Choose who you are to get started. Everyone should open this same page — whatever's picked appears on Mom's screen right away, no calls needed.</div>
     `;
     bindGlobal();
     return;
   }
 
-  const cards = MEALS.map(m => state.role==='dad' ? renderMealCardDad(m) : renderMealCardMom(m)).join('');
-  const fasting = isFastingDay(parseDateKey(state.day));
+  const cards = MEALS.map(m => isEditorRole() ? renderMealCardDad(m) : renderMealCardMom(m)).join('');
+  const fasting = isFastingDay(parseDateKey(state.day)) && showsFasting();
+  const momSub = state.data.khyatiHome ? "Today's menu, picked by Dad or Khyati" : "Today's menu, picked by Dad";
 
   app.innerHTML = `
     <div class="masthead">
       <div class="eyebrow">Home Kitchen</div>
       <h1>What's Cooking?</h1>
-      <div class="sub">${state.role==='dad' ? 'Pick a dish for each meal' : "Today's menu, picked by Dad"}</div>
+      <div class="sub">${isEditorRole() ? 'Pick a dish for each meal' : momSub}</div>
     </div>
+    ${renderHomeToggle()}
     ${renderDayTabs()}
     ${fasting ? `<div class="fastbanner">🌙 Fasting day — usually just one full meal</div>` : ''}
     ${cards}
     ${state.role==='mom' ? `<div class="footnote">This screen updates on its own every few seconds.</div>` : `<div class="footnote">Tap a meal to choose from the menu, or add a new dish while you're there.</div>`}
-    ${state.role==='dad' ? `<div class="clearweek"><button id="clearWeekBtn">Clear all picks for this week</button></div>` : ''}
-    <div class="switchuser"><button id="switchRole">Not ${state.role==='dad'?'Dad':'Mom'}? Switch user</button></div>
+    ${isEditorRole() ? `<div class="clearweek"><button id="clearWeekBtn">Clear all picks for this week</button></div>` : ''}
+    <div class="switchuser"><button id="switchRole">Not ${ROLE_LABELS[state.role]}? Switch user</button></div>
     ${renderPicker()}
   `;
   bindGlobal();
@@ -443,6 +558,18 @@ function bindGlobal(){
 
   const switchBtn = document.getElementById('switchRole');
   if(switchBtn) switchBtn.onclick = ()=>{ state.role = null; render(); };
+
+  const khyatiHomeToggle = document.getElementById('khyatiHomeToggle');
+  if(khyatiHomeToggle){
+    khyatiHomeToggle.onchange = (e)=>{
+      state.data.khyatiHome = e.target.checked;
+      if(!state.data.khyatiHome && state.role === 'khyati'){
+        state.role = null; // she just got marked away — send this device back to the role screen
+      }
+      render();
+      saveData();
+    };
+  }
 
   app.querySelectorAll('[data-day]').forEach(b=>{
     b.onclick = ()=>{ state.day = b.dataset.day; render(); };
@@ -463,7 +590,8 @@ function bindGlobal(){
       state.picker = b.dataset.open;
       const meal = MEALS.find(m=>m.key===state.picker);
       const entry = selEntry(state.day, state.picker);
-      const lastType = (entry && entry.items.length) ? entry.items[entry.items.length-1].type : null;
+      const ownItems = personPicks(entry, state.role);
+      const lastType = ownItems.length ? ownItems[ownItems.length-1].type : null;
       state.addSectionOpen = false;
       state.addSectionText = '';
       if(meal.mode === 'flat'){
@@ -481,7 +609,14 @@ function bindGlobal(){
   const closeBtn = document.getElementById('closeSheet');
   if(closeBtn) closeBtn.onclick = ()=>{ state.picker=null; render(); };
   const doneBtn = document.getElementById('doneBtn');
-  if(doneBtn) doneBtn.onclick = ()=>{ state.picker=null; render(); };
+  if(doneBtn) doneBtn.onclick = ()=>{
+    const day = state.day, mealkey = state.picker, person = state.role;
+    const entry = selEntry(day, mealkey);
+    const madeChoice = personSkipped(entry, person) || personPicks(entry, person).length > 0;
+    state.picker = null;
+    render();
+    if(madeChoice) showToast('✅ Choice submitted!');
+  };
   const overlay = document.getElementById('overlay');
   if(overlay) overlay.onclick = (e)=>{ if(e.target===overlay){ state.picker=null; render(); } };
 
