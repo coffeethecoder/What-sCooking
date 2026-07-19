@@ -47,7 +47,9 @@ const MENU_DATA = {
       "Boiled lettuce",
       "Tomato Soup",
       "Raita",
-      "Cucumber in soy mix"
+      "Cucumber in soy mix",
+      "Cucumber Tomato Onion",
+      "Cucumber Tomato"
     ],
 
     "Sabzi": [

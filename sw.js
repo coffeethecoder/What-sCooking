@@ -1,7 +1,3 @@
-// Minimal service worker — just enough to make the app installable
-// as a home-screen icon. It doesn't cache anything special right now,
-// so the app always loads the latest version from the network.
-
 self.addEventListener('install', (e) => {
   self.skipWaiting();
 });

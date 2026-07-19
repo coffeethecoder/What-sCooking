@@ -48,6 +48,20 @@ body{
 }
 .masthead .sub{color:var(--ink-soft);font-size:13px;margin-top:4px;}
 
+/* landing-screen video (autoplays muted, loops; small unmute button in the corner) */
+.video-wrap{position:relative;margin-bottom:16px;}
+.home-video{
+  width:100%;aspect-ratio:16/9;border-radius:16px;
+  display:block;object-fit:cover;box-shadow:var(--glass-shadow);
+}
+.mutebtn{
+  position:absolute;bottom:10px;right:10px;
+  width:36px;height:36px;border-radius:50%;border:1px solid var(--glass-border);
+  background:rgba(43,36,32,0.55);backdrop-filter:var(--blur-sm);-webkit-backdrop-filter:var(--blur-sm);
+  font-size:15px;cursor:pointer;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+
 /* Khyati-is-home toggle */
 .hometoggle-wrap{
   display:flex;align-items:center;gap:10px;

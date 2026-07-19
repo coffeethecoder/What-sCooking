@@ -57,6 +57,21 @@ function migrateSelections(saved){
   return out;
 }
 
+// housekeeping: drop selections older than 8 weeks so the database doesn't grow forever.
+// date keys are "YYYY-MM-DD", so plain string comparison sorts correctly.
+const KEEP_WEEKS = 8;
+function pruneOldSelections(){
+  const cutoff = dateKey(addDays(new Date(), -KEEP_WEEKS * 7));
+  let removed = false;
+  Object.keys(state.data.selections).forEach(day=>{
+    if(day < cutoff){
+      delete state.data.selections[day];
+      removed = true;
+    }
+  });
+  return removed;
+}
+
 let state = {
   role: null,          // 'dad' | 'mom'
   weekStart: startOfWeek(new Date()), // Monday of the currently displayed week
@@ -71,6 +86,7 @@ let state = {
 
 const STORAGE_KEY = 'app-data';
 let seeded = false;
+let prunedThisSession = false;
 
 async function saveData(){
   try{
@@ -123,6 +139,11 @@ function startSync(){
       };
       if(!state.data.khyatiHome && state.role === 'khyati'){
         state.role = null; // her profile just got locked — send this device back to the role screen
+      }
+      // one-time housekeeping per session: clear out weeks older than the retention window
+      if(!prunedThisSession){
+        prunedThisSession = true;
+        if(pruneOldSelections()) saveData();
       }
     } else if(!seeded){
       seeded = true;
@@ -519,6 +540,14 @@ function render(){
         <h1>What's Cooking?</h1>
         <div class="sub">${state.data.khyatiHome ? 'Dad and Khyati pick. Mom sees it instantly.' : 'Dad picks. Mom sees it instantly.'}</div>
       </div>
+
+      <div class="video-wrap">
+        <video class="home-video" id="homeVideo" autoplay muted loop playsinline preload="auto">
+          <source src="vd1.mp4" type="video/mp4">
+        </video>
+        <button id="muteToggle" class="mutebtn" title="Sound on/off">🔇</button>
+      </div>
+
       ${renderHomeToggle()}
       ${renderRoleSwitch()}
       <div class="footnote">Choose who you are to get started. Everyone should open this same page — whatever's picked appears on Mom's screen right away, no calls needed.</div>
@@ -558,6 +587,15 @@ function bindGlobal(){
 
   const switchBtn = document.getElementById('switchRole');
   if(switchBtn) switchBtn.onclick = ()=>{ state.role = null; render(); };
+
+  const muteToggle = document.getElementById('muteToggle');
+  const homeVideo = document.getElementById('homeVideo');
+  if(muteToggle && homeVideo){
+    muteToggle.onclick = ()=>{
+      homeVideo.muted = !homeVideo.muted;
+      muteToggle.textContent = homeVideo.muted ? '🔇' : '🔊';
+    };
+  }
 
   const khyatiHomeToggle = document.getElementById('khyatiHomeToggle');
   if(khyatiHomeToggle){
