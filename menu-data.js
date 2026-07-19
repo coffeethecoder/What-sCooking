@@ -36,14 +36,18 @@ const MENU_DATA = {
       "Mix rotlo",
       "Bread",
       "Pav", 
-      "Rice"
+      "Brown Rice",
+      "White Rice",
+      "Jeera Rice"
     ],
     
     "Salad": [
       "Tomoato Salad",
       "Cucumber Cheese Salad",
       "Boiled lettuce",
-      "Tomato Soup"
+      "Tomato Soup",
+      "Raita",
+      "Cucumber in soy mix"
     ],
 
     "Sabzi": [
@@ -60,7 +64,9 @@ const MENU_DATA = {
       "Dal",
       "Dal Fry",
       "Palak Paneer",
-      "Masala Paneer"
+      "Masala Paneer",
+      "Paneer Mushroom",
+      "Rajma"
     ],
 
     "South Indian": [
@@ -72,8 +78,8 @@ const MENU_DATA = {
     ],
 
     "Special": [
-        "Rajma Rice",
-        "Sandwich",
+        "Sada Vegetable Sandwich",
+        "Chinese-style Paneer Sandwich",
         "Thepla",
         "Bhajiya",
         "Kheema",
@@ -82,14 +88,23 @@ const MENU_DATA = {
         "Patra",
         "Muthiya",
         "Kanda Poha",
-        "Omlette"
+        "Omlette",
+        "Carrot Halwa",
+        "Bottle Gourd Halwa",
+        "Makai Chiwda"
     ],
 
     "Non-Veg":[
-        "Boiled Chicken with fried rice",
-        "Boiled Fish with fried rice",
-        "Fish with Palak curry",
-        "Chicken with Palak curry"
+        "Chicken Breast",
+        "Drumstick",
+        "Salmon",
+        "Tilapia"
+    ],
+    "Non-Veg Style":[
+        "Palak Curry",
+        "Fish Curry",
+        "Normal Tawa fry",
+        "Poha with chicken/fish"
     ],
 
     "Chinese": [
